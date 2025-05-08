@@ -99,3 +99,91 @@ resource "aws_subnet" "db_subnet_2" {
     env = "shared"
   }
 }
+
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.vpc.id
+
+  tags = {
+    Name = "soop-igw"
+    project = "soop"
+    env = "shared"
+  }
+}
+
+resource "aws_eip" "ngw_eip" {
+  tags = {
+    Name = "soop-ngw-eip"
+    project = "soop"
+    env = "shared"
+  }
+}
+
+resource "aws_nat_gateway" "ngw" {
+  allocation_id = aws_eip.ngw_eip.id
+  subnet_id = aws_subnet.public_subnet_1.id
+
+  tags = {
+    Name = "soop-ngw"
+    project = "soop"
+    env = "shared"
+  }
+}
+
+resource "aws_route_table" "public-rt" {
+  vpc_id = aws_vpc.vpc.id
+  
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name = "soop-public-rt"
+    project = "soop"
+    env = "shared"
+  }
+}
+
+resource "aws_route_table" "private-rt-a" {
+  vpc_id = aws_vpc.vpc.id
+  
+  route {
+    cidr_block = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.ngw.id
+  }
+  tags = {
+    Name = "soop-private-rt-a"
+    project = "soop"
+    env = "shared"
+  }
+}
+
+resource "aws_route_table" "private-rt-b" {
+  vpc_id = aws_vpc.vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.ngw.id
+  }
+
+  tags = {
+    Name = "soop-private-rt-b"
+    project = "soop"
+    env = "shared"
+  }
+}
+
+resource "aws_route_table_association" "public-rt-assoc" {
+  subnet_id = aws_subnet.public_subnet_1.id
+  route_table_id = aws_route_table.public-rt.id
+}
+
+resource "aws_route_table_association" "private-rt1-assoc" {
+  subnet_id = aws_subnet.private_subnet_a1.id
+  route_table_id = aws_route_table.private-rt-a.id
+}
+
+resource "aws_route_table_association" "private-rt2-assoc" {
+  subnet_id = aws_subnet.private_subnet_a2.id
+  route_table_id = aws_route_table.private-rt-b.id
+}

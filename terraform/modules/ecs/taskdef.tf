@@ -1,5 +1,5 @@
 resource "aws_ecs_task_definition" "front-td" {
-  family = "soop-front-td"
+  family = "${var.project}-front-td"
   requires_compatibilities = [ "EC2", "FARGATE" ]
   runtime_platform {
     operating_system_family = "LINUX"
@@ -30,8 +30,8 @@ resource "aws_ecs_task_definition" "front-td" {
   ])
 
   tags = {
-    Name = "soop-front-td"
-    project = "soop"
-    env = "shared"
+    Name = "${var.project}-front-td"
+    project = var.project
+    env = var.env
   }
 }

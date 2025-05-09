@@ -1,21 +1,21 @@
 resource "aws_ecs_cluster" "ecs-cluster" {
-    name = "soop-cluster"
+    name = "${var.project}-cluster"
     
     tags = {
-        Name = "soop-cluster"
-        project = "soop"
-        env = "shared"
+        Name = "${var.project}-cluster"
+        project = var.project
+        env = var.env
     }
 }
 
 resource "aws_launch_template" "ecs-asg-launch-template" {
-    name = "soop-ecs-asg-launch-template"
+    name = "${var.project}-ecs-asg-launch-template"
     instance_type = "t3.medium"
     iam_instance_profile {
       arn = "arn:aws:iam::650553045794:instance-profile/ecsInstanceRole"
     }
     image_id = "ami-0d3c70bbb60c7b255"
-    user_data = filebase64("asg.userdata.sh")
+    user_data = filebase64("${path.module}/asg.userdata.sh")
     update_default_version = true
 }
 

@@ -11,8 +11,36 @@ module "ecs" {
   env = "shared"
 }
 
-module "ec2" {
-  source = "../../modules/ec2"
-  project = "soop"
-  env = "shared"
+module "sg" {
+  for_each = local.security_groups
+
+  source  = "../../modules/ec2/sg"
+  name    = each.value.name
+  vpc_id  = module.vpc.vpc_id
+
+  ingress_rules = each.value.ingress
+  egress_rules  = [
+    {
+      description = "Allow all egress"
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  ]
+
+  tags = {
+    role = each.key
+    env  = "shared"
+  }
+}
+
+module "alb" {
+  source  = "../../modules/ec2/alb/alb"
+
+  vpc_id = module.vpc.vpc_id
+  name = "${var.project}-alb"
+  security_groups = [module.sg["alb"].security_group_id]
+  subnets = [module.vpc.public_subnet_1_id, module.vpc.public_subnet_2_id]
+
 }

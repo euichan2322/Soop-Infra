@@ -7,3 +7,16 @@ variable "env" {
   type        = string
   default     = "shared"
 }
+
+variable "name" {
+  type = string
+}
+
+variable "vpc_id" {
+  type = string
+}
+
+variable "port" {
+  type = string
+  default = "80"
+}

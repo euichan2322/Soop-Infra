@@ -14,6 +14,7 @@ resource "aws_subnet" "public_subnet_1" {
   vpc_id = aws_vpc.vpc.id
   cidr_block = cidrsubnet(var.cidr_block, 8, 0)
   map_public_ip_on_launch = true
+  availability_zone = "ap-northeast-2a"
 
   tags = {
     Name = "${var.project}-public-subnet-a"
@@ -26,6 +27,7 @@ resource "aws_subnet" "public_subnet_2" {
   vpc_id = aws_vpc.vpc.id
   cidr_block = cidrsubnet(var.cidr_block, 8, 1)
   map_public_ip_on_launch = true
+  availability_zone = "ap-northeast-2b"
 
   tags = {
     Name = "${var.project}-public-subnet-b"
@@ -37,6 +39,7 @@ resource "aws_subnet" "public_subnet_2" {
 resource "aws_subnet" "private_subnet_a1" {
   vpc_id = aws_vpc.vpc.id
   cidr_block = cidrsubnet(var.cidr_block, 8, 100)
+  availability_zone = "ap-northeast-2a"
 
   tags = {
     Name = "${var.project}-private-subnet-a1"
@@ -48,6 +51,7 @@ resource "aws_subnet" "private_subnet_a1" {
 resource "aws_subnet" "private_subnet_a2" {
   vpc_id = aws_vpc.vpc.id
   cidr_block = cidrsubnet(var.cidr_block, 8, 125)
+  availability_zone = "ap-northeast-2a"
 
   tags = {
     Name = "${var.project}-private-subnet-a2"
@@ -59,6 +63,7 @@ resource "aws_subnet" "private_subnet_a2" {
 resource "aws_subnet" "private_subnet_b1" {
   vpc_id = aws_vpc.vpc.id
   cidr_block = cidrsubnet(var.cidr_block, 8, 150)
+  availability_zone = "ap-northeast-2b"
 
   tags = {
     Name = "${var.project}-private-subnet-b1"
@@ -70,6 +75,7 @@ resource "aws_subnet" "private_subnet_b1" {
 resource "aws_subnet" "private_subnet_b2" {
   vpc_id = aws_vpc.vpc.id
   cidr_block = cidrsubnet(var.cidr_block, 8, 175)
+  availability_zone = "ap-northeast-2b"
 
   tags = {
     Name = "${var.project}-private-subnet-b2"
@@ -81,6 +87,7 @@ resource "aws_subnet" "private_subnet_b2" {
 resource "aws_subnet" "db_subnet_1" {
   vpc_id = aws_vpc.vpc.id
   cidr_block = cidrsubnet(var.cidr_block, 8, 200)
+  availability_zone = "ap-northeast-2a"
 
   tags = {
     Name = "${var.project}-db-subnet1"
@@ -92,6 +99,7 @@ resource "aws_subnet" "db_subnet_1" {
 resource "aws_subnet" "db_subnet_2" {
   vpc_id = aws_vpc.vpc.id
   cidr_block = cidrsubnet(var.cidr_block, 8, 201)
+  availability_zone = "ap-northeast-2b"
 
   tags = {
     Name = "${var.project}-db-subnet2"

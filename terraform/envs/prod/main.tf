@@ -14,6 +14,6 @@ module "tg" {
   for_each = local.tg
   
   source  = "../../modules/ec2/alb/tg"
-  name = "each.value.name"
+  name = each.value.name
   vpc_id = data.terraform_remote_state.shared.outputs.vpc_id
 }

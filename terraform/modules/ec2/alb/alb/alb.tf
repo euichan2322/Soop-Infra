@@ -28,7 +28,7 @@ resource "aws_lb_listener" "http_listner" {
   }
 }
 
-resource "aws_lb_listener" "https_listner" {
+/*resource "aws_lb_listener" "https_listner" {
   load_balancer_arn = aws_lb.alb.arn
   port = "443"
   protocol = "HTTPS"
@@ -42,4 +42,4 @@ resource "aws_lb_listener" "https_listner" {
       status_code  = "200"
     }
   }
-}
+}*/

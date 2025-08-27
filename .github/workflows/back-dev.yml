@@ -1,0 +1,279 @@
+name: Backend Dev env CI/CD
+
+on:
+  repository_dispatch:
+    types: [backend-dev]
+
+jobs:
+  # CI
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_digest: ${{ steps.build-image.outputs.digest }}
+      image_tag: ${{ github.event.client_payload.sha }}
+      start_time: ${{ steps.start-time.outputs.start_time }}
+      build_duration: ${{ steps.record-build-duration.outputs.build_duration }}
+      build_end_time: ${{ steps.record-build-duration.outputs.build_end_time }}
+
+    steps:
+
+      - name: Record start time
+        id: start-time
+        run: echo "start_time=$(date -u +%s)" >> $GITHUB_OUTPUT
+
+      # Slack 빌드 시작 알림
+      - name: Send Slack start message
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          SHORT_COMMIT="${GITHUB_SHA::7}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}"
+          COMMIT_TIMESTAMP=$(date -d "${{ github.event.head_commit.timestamp }}" +%s)
+          BUILD_START_TIMESTAMP=$(date +%s)
+          PAYLOAD=$(cat <<EOF
+          {
+            "attachments": [
+              { 
+                "color": "#36a64f",
+                "pretext": ":rocket: 백엔드 Dev stage 빌드 시작",
+                "fields": [
+                  { "title": "레포", "value": "${{ github.repository }}", "short": true },
+                  { "title": "브랜치", "value": "$BRANCH", "short": true },
+                  { "title": "담당자", "value": "<@U07PZVCA3LN>, <@U07QK8UB2HX>, <@U07QVC2UW48>" },
+                  { "title": "커밋해시", "value": "<$RUN_URL|$SHORT_COMMIT>", "short": true },
+                  { "title": "Triggered by", "value": "${{ github.actor }}", "short": true },
+                  { "title": "이미지 태그", "value": "$IMAGE", "short": false },
+                  { "title": "푸시된 시간", "value": "<!date^${COMMIT_TIMESTAMP}^{date_short_pretty} {time_secs}|${{ github.event.head_commit.timestamp }}>", "short": false },
+                  { "title": "빌드 시작 시간", "value": "<!date^${BUILD_START_TIMESTAMP}^{date_short_pretty} {time_secs}|시작됨>", "short": false }
+                ],
+                "footer": "Workflow",
+                "ts": $(date +%s)
+              }
+            ]
+          }
+          EOF
+          )
+          curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      # 애플리케이션 레포지토리의 소스 코드 체크아웃
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            repository: ${{ github.event.client_payload.repoName }}
+            ref: ${{ github.event.client_payload.branchName }}
+            token: ${{ secrets.GH_PAT_FOR_CHECKOUT }}
+
+      # JDK 21 설정
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      # Gradle 캐시로 빌드 속도 향상
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # Gradle 빌드 권한 부여
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      # Gradle로 빌드 및 테스트 실행
+      - name: Build with Gradle
+        run: ./gradlew build -x test
+
+      # QEMU/Buildx 설정 (arm64 이미지 빌드용)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Docker Hub 로그인
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Docker 이미지 빌드 및 푸시 (멀티 아키텍처)
+      - name: Build and Push multi-arch image
+        id: build-image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Record build end and duration
+        id: record-build-duration
+        run: |
+          BUILD_START=${{ steps.start-time.outputs.start_time }}
+          BUILD_END=$(date -u +%s)
+          BUILD_DURATION=$((BUILD_END - BUILD_START))
+          echo "build_end_time=$BUILD_END" >> $GITHUB_OUTPUT
+          echo "build_duration=$BUILD_DURATION" >> $GITHUB_OUTPUT
+
+  # CD        
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    needs: build-and-push
+
+    steps:
+      - name: Record deploy start time
+        id: deploy-start
+        run: echo "deploy_start_time=$(date -u +%s)" >> $GITHUB_OUTPUT
+
+      # 배포 스크립트 실행
+      - name: Deploy to Raspberry Pi
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.ONPREM_HOST }}
+          username: ${{ secrets.ONPREM_USER }}
+          password: ${{ secrets.ONPREM_SSH_PASSWORD }}
+          port: ${{ secrets.ONPREM_SSH_PORT }}
+          script: |
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}
+            docker stop new-project-container || true
+            docker rm new-project-container || true
+            docker run -d --name new-project-container --env-file ${{ secrets.ENV_FILE_PATH }} -p 8080:8080 --network="host" ${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}
+            docker image prune -f
+
+      - name: Record deploy end and duration
+        id: record-deploy-duration
+        run: |
+          DEPLOY_START=${{ steps.deploy-start.outputs.deploy_start_time }}
+          DEPLOY_END=$(date -u +%s)
+          DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
+          echo "deploy_end_time=$DEPLOY_END" >> $GITHUB_OUTPUT
+          echo "deploy_duration=$DEPLOY_DURATION" >> $GITHUB_OUTPUT
+
+      # Slack 배포 완료 알림 (성공)
+      - name: Send Slack completion message
+        if: success()
+        env:
+          BUILD_START_TIME: ${{ needs.build-and-push.outputs.start_time }}
+          BUILD_END_TIME: ${{ needs.build-and-push.outputs.build_end_time }}
+          BUILD_DURATION: ${{ needs.build-and-push.outputs.build_duration }}
+          DEPLOY_START_TIME: ${{ steps.deploy-start.outputs.deploy_start_time }}
+          DEPLOY_END_TIME: ${{ steps.record-deploy-duration.outputs.deploy_end_time }}
+          DEPLOY_DURATION: ${{ steps.record-deploy-duration.outputs.deploy_duration }}
+        run: |
+          # Total from build start to now
+          NOW=$(date -u +%s)
+          TOTAL_SEC=$((NOW - BUILD_START_TIME))
+          TOTAL_MIN=$((TOTAL_SEC/60))
+          TOTAL_REM=$((TOTAL_SEC%60))
+
+          # Build
+          BUILD_SEC=${BUILD_DURATION:-0}
+          BUILD_MIN=$((BUILD_SEC/60))
+          BUILD_REM=$((BUILD_SEC%60))
+
+          # Deploy
+          DEPLOY_SEC=${DEPLOY_DURATION:-0}
+          DEPLOY_MIN=$((DEPLOY_SEC/60))
+          DEPLOY_REM=$((DEPLOY_SEC%60))
+
+          # Timestamps (fallback to 0 -> show human UTC time)
+          BUILD_START_HUMAN=${BUILD_START_TIME:-0}
+          BUILD_END_HUMAN=${BUILD_END_TIME:-0}
+          DEPLOY_START_HUMAN=${DEPLOY_START_TIME:-0}
+          DEPLOY_END_HUMAN=${DEPLOY_END_TIME:-0}
+
+          BUILD_START_DATE="<!date^${BUILD_START_HUMAN}^{date_short_pretty} {time_secs}|$(date -u -d @${BUILD_START_HUMAN} '+%Y-%m-%d %H:%M:%S')>"
+          BUILD_END_DATE="<!date^${BUILD_END_HUMAN}^{date_short_pretty} {time_secs}|$(date -u -d @${BUILD_END_HUMAN} '+%Y-%m-%d %H:%M:%S')>"
+          DEPLOY_START_DATE="<!date^${DEPLOY_START_HUMAN}^{date_short_pretty} {time_secs}|$(date -u -d @${DEPLOY_START_HUMAN} '+%Y-%m-%d %H:%M:%S')>"
+          DEPLOY_END_DATE="<!date^${DEPLOY_END_HUMAN}^{date_short_pretty} {time_secs}|$(date -u -d @${DEPLOY_END_HUMAN} '+%Y-%m-%d %H:%M:%S')>"
+
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          SHORT_COMMIT="${GITHUB_SHA::7}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}"
+          DIGEST="${{ needs.build-and-push.outputs.image_digest }}"
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "attachments": [
+              {
+                "color": "#36a64f",
+                "title": ":white_check_mark: 배포 성공",
+                "fields": [
+                  { "title": "Repository", "value": "JNU-econovation/New-Project-BE", "short": true },
+                  { "title": "Branch", "value": "$BRANCH", "short": true },
+                  { "title": "Commit", "value": "<$RUN_URL|$SHORT_COMMIT>", "short": true },
+                  { "title": "빌드 시작 시간", "value": "$BUILD_START_DATE", "short": true },
+                  { "title": "빌드 완료 시간", "value": "$BUILD_END_DATE", "short": true },
+                  { "title": "빌드 시간", "value": "${BUILD_MIN}m ${BUILD_REM}s", "short": true },
+                  { "title": "배포 시작 시간", "value": "$DEPLOY_START_DATE", "short": true },
+                  { "title": "배포 완료 시간", "value": "$DEPLOY_END_DATE", "short": true },
+                  { "title": "배포 시간", "value": "${DEPLOY_MIN}m ${DEPLOY_REM}s", "short": true },
+                  { "title": "총 걸린 시간", "value": "${TOTAL_MIN}m ${TOTAL_REM}s", "short": true },
+                  { "title": "Image", "value": "$IMAGE", "short": false },
+                  { "title": "Image digest", "value": "$DIGEST", "short": false }
+                ],
+                "footer": "View run",
+                "footer_icon": "https://github.githubassets.com/favicon.ico",
+                "ts": $(date +%s)
+              }
+            ]
+          }
+          EOF
+          )
+          curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      # Slack 배포 실패 알림
+      - name: Send Slack failure message
+        if: failure()
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          SHORT_COMMIT="${GITHUB_SHA::7}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          PAYLOAD=$(cat <<EOF
+          {
+            "attachments": [
+              {
+                "color": "#ff0000",
+                "title": ":x: 배포 실패",
+                "fields": [
+                  { "title": "Repository", "value": "${{ github.repository }}", "short": true },
+                  { "title": "Branch", "value": "$BRANCH", "short": true },
+                  { "title": "Commit", "value": "<$RUN_URL|$SHORT_COMMIT>", "short": true }
+                ],
+                "footer": "View run for logs",
+                "ts": $(date +%s)
+              }
+            ]
+          }
+          EOF
+          )
+          curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" ${{ secrets.SLACK_WEBHOOK_URL }}    
+
+# To do
+# - 배포 후 health check 설정, 롤백
+# - 무중단 배포(Graceful shut down)
+# - 슬랙 커스텀 메시지
+# - 실행과 무관한 파일이 변경되면(ex .gitignore) build 하지 않기.
+# - 메세지가 너무 많이 남지 않도록, 알림 수정 or 그룹화 하도록 하기.
+# - 코드에 시간 관련된 변수들이 많아서 가독성을 해칠 수 있습니다. 어떻게 분리할지 생각해보기.
+#   - 변수가 많아서 더러움 vs 수식을 필요한 줄에서 수행해서 읽기 어려움
+# - 레포 이름, RUN URL 
+# - CI 단계에서 테스트를 실행하도록 하기.
+# - 깃허브에도 단기 자격증명과 장기 자격증명이 있다면 이를 이용해 안전하게 토큰을 실행마다 발급받도록 수정 하기.
+# - slack 알람에서 하드코딩 되어있는 레포지토리 이름을 변수로 수정하기.
+# - 도커 컴포즈로 변경 (다른 컨테이너에 접근 못 하는 중.)

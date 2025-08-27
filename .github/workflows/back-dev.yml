@@ -12,7 +12,7 @@ jobs:
 
     outputs:
       image_digest: ${{ steps.build-image.outputs.digest }}
-      image_tag: ${{ github.sha }}
+      image_tag: ${{ github.event.client_payload.sha }}
       start_time: ${{ steps.start-time.outputs.start_time }}
       build_duration: ${{ steps.record-build-duration.outputs.build_duration }}
       build_end_time: ${{ steps.record-build-duration.outputs.build_end_time }}
@@ -275,3 +275,4 @@ jobs:
 # - 레포 이름, RUN URL 
 # - CI 단계에서 테스트를 실행하도록 하기.
 # - 깃허브에도 단기 자격증명과 장기 자격증명이 있다면 이를 이용해 안전하게 토큰을 실행마다 발급받도록 수정 하기.
+# - slack 알람에서 하드코딩 되어있는 레포지토리 이름을 변수로 수정하기.

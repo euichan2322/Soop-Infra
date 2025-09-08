@@ -148,10 +148,12 @@ jobs:
           password: ${{ secrets.ONPREM_SSH_PASSWORD }}
           port: ${{ secrets.ONPREM_SSH_PORT }}
           script: |
+            cd ${{ secrets.WORKING_DIR }}
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}
-            docker stop new-project-container || true
-            docker rm new-project-container || true
-            docker run -d --name new-project-container --env-file ${{ secrets.ENV_FILE_PATH }} -p 8080:8080 --network="host" ${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}
+            docker compose stop spring
+            docker compose rm -f spring
+            sed -i -E "s#(${{ secrets.DOCKERHUB_USERNAME }}/new-project:).*#\1${{ github.sha }}#g" docker-compose.yml
+            docker compose up -d spring
             docker image prune -f
 
       - name: Record deploy end and duration

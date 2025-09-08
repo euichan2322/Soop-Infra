@@ -150,7 +150,8 @@ jobs:
           script: |
             cd ${{ secrets.WORKING_DIR }}
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}
-            docker compose down --spring
+            docker compose stop spring
+            docker compose rm -f spring
             sed -i -E "s#(${{ secrets.DOCKERHUB_USERNAME }}/new-project:).*#\1${{ github.sha }}#g" docker-compose.yml
             docker compose up -d spring
             docker image prune -f

@@ -23,13 +23,17 @@ jobs:
         id: start-time
         run: echo "start_time=$(date -u +%s)" >> $GITHUB_OUTPUT
 
+      - name: Define reusable variables
+        run: |
+          echo "BRANCH=${{ github.event.client_payload.branchName }}" >> $GITHUB_ENV
+          echo "SHORT_COMMIT=${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "RUN_URL=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_ENV
+          echo "IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}" >> $GITHUB_ENV
+          echo "DIGEST=${{ needs.build-and-push.outputs.image_digest }}" >> $GITHUB_ENV
+
       # Slack 빌드 시작 알림
       - name: Send Slack start message
         run: |
-          BRANCH="${GITHUB_REF#refs/heads/}"
-          SHORT_COMMIT="${GITHUB_SHA::7}"
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}"
           COMMIT_TIMESTAMP=$(date -d "${{ github.event.head_commit.timestamp }}" +%s)
           BUILD_START_TIMESTAMP=$(date +%s)
           PAYLOAD=$(cat <<EOF
@@ -176,39 +180,6 @@ jobs:
           DEPLOY_END_TIME: ${{ steps.record-deploy-duration.outputs.deploy_end_time }}
           DEPLOY_DURATION: ${{ steps.record-deploy-duration.outputs.deploy_duration }}
         run: |
-          # Total from build start to now
-          NOW=$(date -u +%s)
-          TOTAL_SEC=$((NOW - BUILD_START_TIME))
-          TOTAL_MIN=$((TOTAL_SEC/60))
-          TOTAL_REM=$((TOTAL_SEC%60))
-
-          # Build
-          BUILD_SEC=${BUILD_DURATION:-0}
-          BUILD_MIN=$((BUILD_SEC/60))
-          BUILD_REM=$((BUILD_SEC%60))
-
-          # Deploy
-          DEPLOY_SEC=${DEPLOY_DURATION:-0}
-          DEPLOY_MIN=$((DEPLOY_SEC/60))
-          DEPLOY_REM=$((DEPLOY_SEC%60))
-
-          # Timestamps (fallback to 0 -> show human UTC time)
-          BUILD_START_HUMAN=${BUILD_START_TIME:-0}
-          BUILD_END_HUMAN=${BUILD_END_TIME:-0}
-          DEPLOY_START_HUMAN=${DEPLOY_START_TIME:-0}
-          DEPLOY_END_HUMAN=${DEPLOY_END_TIME:-0}
-
-          BUILD_START_DATE="<!date^${BUILD_START_HUMAN}^{date_short_pretty} {time_secs}|$(date -u -d @${BUILD_START_HUMAN} '+%Y-%m-%d %H:%M:%S')>"
-          BUILD_END_DATE="<!date^${BUILD_END_HUMAN}^{date_short_pretty} {time_secs}|$(date -u -d @${BUILD_END_HUMAN} '+%Y-%m-%d %H:%M:%S')>"
-          DEPLOY_START_DATE="<!date^${DEPLOY_START_HUMAN}^{date_short_pretty} {time_secs}|$(date -u -d @${DEPLOY_START_HUMAN} '+%Y-%m-%d %H:%M:%S')>"
-          DEPLOY_END_DATE="<!date^${DEPLOY_END_HUMAN}^{date_short_pretty} {time_secs}|$(date -u -d @${DEPLOY_END_HUMAN} '+%Y-%m-%d %H:%M:%S')>"
-
-          BRANCH="${GITHUB_REF#refs/heads/}"
-          SHORT_COMMIT="${GITHUB_SHA::7}"
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}"
-          DIGEST="${{ needs.build-and-push.outputs.image_digest }}"
-
           PAYLOAD=$(cat <<EOF
           {
             "attachments": [
@@ -243,7 +214,7 @@ jobs:
       - name: Send Slack failure message
         if: failure()
         run: |
-          BRANCH="${GITHUB_REF#refs/heads/}"
+          BRANCH="${{ github.event.client_payload.branchName }}"
           SHORT_COMMIT="${GITHUB_SHA::7}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           PAYLOAD=$(cat <<EOF
@@ -278,4 +249,3 @@ jobs:
 # - CI 단계에서 테스트를 실행하도록 하기.
 # - 깃허브에도 단기 자격증명과 장기 자격증명이 있다면 이를 이용해 안전하게 토큰을 실행마다 발급받도록 수정 하기.
 # - slack 알람에서 하드코딩 되어있는 레포지토리 이름을 변수로 수정하기.
-# - 도커 컴포즈로 변경 (다른 컨테이너에 접근 못 하는 중.)

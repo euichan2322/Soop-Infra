@@ -4,6 +4,14 @@ on:
   repository_dispatch:
     types: [backend-dev]
 
+env: 
+  repoName: ${{ github.event.client_payload.repoName }}
+  branchName: ${{ github.event.client_payload.branchName }}
+  sha: ${{ github.event.client_payload.sha }}
+  shortSha: "${sha::7}"
+  imageTag: ${{ github.event.client_payload.sha }}
+  RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
 jobs:
   # CI
   build-and-push:
@@ -26,10 +34,7 @@ jobs:
       # Slack 빌드 시작 알림
       - name: Send Slack start message
         run: |
-          BRANCH="${GITHUB_REF#refs/heads/}"
-          SHORT_COMMIT="${GITHUB_SHA::7}"
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}"
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ env.sha }}"
           COMMIT_TIMESTAMP=$(date -d "${{ github.event.head_commit.timestamp }}" +%s)
           BUILD_START_TIMESTAMP=$(date +%s)
           PAYLOAD=$(cat <<EOF
@@ -39,10 +44,10 @@ jobs:
                 "color": "#36a64f",
                 "pretext": ":rocket: 백엔드 Dev stage 빌드 시작",
                 "fields": [
-                  { "title": "레포", "value": "${{ github.repository }}", "short": true },
+                  { "title": "레포", "value": "${{ env.repoName }}", "short": true },
                   { "title": "브랜치", "value": "$BRANCH", "short": true },
                   { "title": "담당자", "value": "<@U07PZVCA3LN>, <@U07QK8UB2HX>, <@U07QVC2UW48>" },
-                  { "title": "커밋해시", "value": "<$RUN_URL|$SHORT_COMMIT>", "short": true },
+                  { "title": "커밋해시", "value": "<${{ env.RUN_URL }}|$SHORT_COMMIT>", "short": true },
                   { "title": "Triggered by", "value": "${{ github.actor }}", "short": true },
                   { "title": "이미지 태그", "value": "$IMAGE", "short": false },
                   { "title": "푸시된 시간", "value": "<!date^${COMMIT_TIMESTAMP}^{date_short_pretty} {time_secs}|${{ github.event.head_commit.timestamp }}>", "short": false },
@@ -61,8 +66,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            repository: ${{ github.event.client_payload.repoName }}
-            ref: ${{ github.event.client_payload.branchName }}
+            repository: ${{ env.repoName }}
+            ref: ${{ env.branchName }}
             token: ${{ secrets.GH_PAT_FOR_CHECKOUT }}
 
       # JDK 21 설정
@@ -149,6 +154,10 @@ jobs:
           port: ${{ secrets.ONPREM_SSH_PORT }}
           script: |
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}
+            cd ${{ secrets.WORK_DIR }}
+            # sed -i 도커 컴포즈 파일 바꾸기
+            # docker compose down spring #다운타임을 최대한 줄일 수 있도록 고민해보기
+            # docker compose up -d spring
             docker stop new-project-container || true
             docker rm new-project-container || true
             docker run -d --name new-project-container --env-file ${{ secrets.ENV_FILE_PATH }} -p 8080:8080 --network="host" ${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}
@@ -203,8 +212,7 @@ jobs:
 
           BRANCH="${GITHUB_REF#refs/heads/}"
           SHORT_COMMIT="${GITHUB_SHA::7}"
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}"
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ env.sha }}"
           DIGEST="${{ needs.build-and-push.outputs.image_digest }}"
 
           PAYLOAD=$(cat <<EOF
@@ -214,9 +222,9 @@ jobs:
                 "color": "#36a64f",
                 "title": ":white_check_mark: 배포 성공",
                 "fields": [
-                  { "title": "Repository", "value": "JNU-econovation/New-Project-BE", "short": true },
+                  { "title": "Repository", "value": "${{ env.repoName }}", "short": true },
                   { "title": "Branch", "value": "$BRANCH", "short": true },
-                  { "title": "Commit", "value": "<$RUN_URL|$SHORT_COMMIT>", "short": true },
+                  { "title": "Commit", "value": "<${{ env.RUN_URL }}|$SHORT_COMMIT>", "short": true },
                   { "title": "빌드 시작 시간", "value": "$BUILD_START_DATE", "short": true },
                   { "title": "빌드 완료 시간", "value": "$BUILD_END_DATE", "short": true },
                   { "title": "빌드 시간", "value": "${BUILD_MIN}m ${BUILD_REM}s", "short": true },
@@ -243,7 +251,6 @@ jobs:
         run: |
           BRANCH="${GITHUB_REF#refs/heads/}"
           SHORT_COMMIT="${GITHUB_SHA::7}"
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           PAYLOAD=$(cat <<EOF
           {
             "attachments": [
@@ -251,9 +258,9 @@ jobs:
                 "color": "#ff0000",
                 "title": ":x: 배포 실패",
                 "fields": [
-                  { "title": "Repository", "value": "${{ github.repository }}", "short": true },
+                  { "title": "Repository", "value": "${{ env.repoName }}", "short": true },
                   { "title": "Branch", "value": "$BRANCH", "short": true },
-                  { "title": "Commit", "value": "<$RUN_URL|$SHORT_COMMIT>", "short": true }
+                  { "title": "Commit", "value": "<${{ env.RUN_URL }}|$SHORT_COMMIT>", "short": true }
                 ],
                 "footer": "View run for logs",
                 "ts": $(date +%s)

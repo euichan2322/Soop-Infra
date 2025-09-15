@@ -31,6 +31,14 @@ jobs:
         id: start-time
         run: echo "start_time=$(date -u +%s)" >> $GITHUB_OUTPUT
 
+      - name: Define reusable variables
+        run: |
+          echo "BRANCH=${{ github.event.client_payload.branchName }}" >> $GITHUB_ENV
+          echo "SHORT_COMMIT=${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "RUN_URL=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_ENV
+          echo "IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}" >> $GITHUB_ENV
+          echo "DIGEST=${{ needs.build-and-push.outputs.image_digest }}" >> $GITHUB_ENV
+
       # Slack 빌드 시작 알림
       - name: Send Slack start message
         run: |
@@ -153,14 +161,16 @@ jobs:
           password: ${{ secrets.ONPREM_SSH_PASSWORD }}
           port: ${{ secrets.ONPREM_SSH_PORT }}
           script: |
+            cd ${{ secrets.WORKING_DIR }}
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}
             cd ${{ secrets.WORK_DIR }}
             # sed -i 도커 컴포즈 파일 바꾸기
             # docker compose down spring #다운타임을 최대한 줄일 수 있도록 고민해보기
             # docker compose up -d spring
-            docker stop new-project-container || true
-            docker rm new-project-container || true
-            docker run -d --name new-project-container --env-file ${{ secrets.ENV_FILE_PATH }} -p 8080:8080 --network="host" ${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ github.sha }}
+            docker compose stop spring
+            docker compose rm -f spring
+            sed -i -E "s#(${{ secrets.DOCKERHUB_USERNAME }}/new-project:).*#\1${{ github.sha }}#g" docker-compose.yml
+            docker compose up -d spring
             docker image prune -f
 
       - name: Record deploy end and duration
@@ -214,7 +224,7 @@ jobs:
           SHORT_COMMIT="${GITHUB_SHA::7}"
           IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/new-project:${{ env.sha }}"
           DIGEST="${{ needs.build-and-push.outputs.image_digest }}"
-
+          
           PAYLOAD=$(cat <<EOF
           {
             "attachments": [
@@ -249,7 +259,7 @@ jobs:
       - name: Send Slack failure message
         if: failure()
         run: |
-          BRANCH="${GITHUB_REF#refs/heads/}"
+          BRANCH="${{ github.event.client_payload.branchName }}"
           SHORT_COMMIT="${GITHUB_SHA::7}"
           PAYLOAD=$(cat <<EOF
           {
@@ -283,4 +293,3 @@ jobs:
 # - CI 단계에서 테스트를 실행하도록 하기.
 # - 깃허브에도 단기 자격증명과 장기 자격증명이 있다면 이를 이용해 안전하게 토큰을 실행마다 발급받도록 수정 하기.
 # - slack 알람에서 하드코딩 되어있는 레포지토리 이름을 변수로 수정하기.
-# - 도커 컴포즈로 변경 (다른 컨테이너에 접근 못 하는 중.)
